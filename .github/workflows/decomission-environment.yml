@@ -58,6 +58,13 @@ jobs:
           repository: ${{ github.event.inputs.application_repo }}
           path: app
 
+      - name: Validate config.json Exists
+        run: |
+          if [ ! -f "./app/config.json" ]; then
+            echo "::error::config.json not found in the root of the application repository (${{ github.event.inputs.application_repo }}). Aborting."
+            exit 1
+          fi
+
       - name: Load Config and Mask Variables
         id: load_config
         working-directory: ./app
@@ -74,6 +81,13 @@ jobs:
           echo "STACK_NAME=$STACK_NAME" >> $GITHUB_ENV
           echo "SSM_PARAM_NAME=$SSM_PARAM_NAME" >> $GITHUB_ENV
           echo "project_identifier=$PROJECT_ID" >> $GITHUB_OUTPUT
+
+      - name: Validate Loaded Configuration
+        run: |
+          if [ -z "${{ env.STACK_NAME }}" ] || [ -z "${{ env.SSM_PARAM_NAME }}" ] || [ -z "${{ steps.load_config.outputs.project_identifier }}" ]; then
+            echo "::error::Critical variables (STACK_NAME, SSM_PARAM_NAME, or project_identifier) could not be loaded from config.json. Aborting."
+            exit 1
+          fi
 
       - name: Configure AWS Credentials for Tooling Account
         uses: aws-actions/configure-aws-credentials@v4
@@ -114,6 +128,13 @@ jobs:
           echo "::add-mask::${{ github.event.inputs.company_name }}"
           echo "::add-mask::${{ github.event.inputs.environment_name }}"
 
+      - name: Validate Inputs from Previous Job
+        run: |
+          if [ -z "${{ needs.delete_application_stack.outputs.project_identifier }}" ]; then
+            echo "::error::Required output 'project_identifier' was not provided by the delete_application_stack job. Aborting."
+            exit 1
+          fi
+
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
@@ -151,6 +172,15 @@ jobs:
         run: |
           echo "::add-mask::${{ github.event.inputs.company_name }}"
           echo "::add-mask::${{ github.event.inputs.environment_name }}"
+
+      - name: Validate Inputs from Previous Job
+        run: |
+          # This job depends on the output of a job that might not have run if the first one failed.
+          # We check the `project_identifier` again which originates from the very first job.
+          if [ -z "${{ needs.delete_application_stack.outputs.project_identifier }}" ]; then
+            echo "::error::Required output 'project_identifier' was not provided by the initial job. Aborting."
+            exit 1
+          fi
 
       - name: Harden Runner
         uses: step-security/harden-runner@v2

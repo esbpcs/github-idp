@@ -55,6 +55,13 @@ jobs:
           repository: ${{ github.event.inputs.application_repo }}
           path: app
 
+      - name: Validate config.json Exists
+        run: |
+          if [ ! -f "./app/config.json" ]; then
+            echo "::error::config.json not found in the root of the application repository (${{ github.event.inputs.application_repo }}). Aborting."
+            exit 1
+          fi
+
       - name: Determine Target Environment and Mask
         run: |
           TARGET_ENV="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
@@ -80,6 +87,13 @@ jobs:
           echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
           echo "STACK_NAME=$STACK_NAME" >> $GITHUB_ENV
           echo "S3_KEY=$S3_KEY" >> $GITHUB_ENV
+
+      - name: Validate Loaded Configuration
+        run: |
+          if [ -z "${{ env.STACK_NAME }}" ] || [ -z "${{ env.SSM_PARAM_NAME }}" ] || [ -z "${{ env.S3_BUCKET }}" ]; then
+            echo "::error::Critical variables (STACK_NAME, SSM_PARAM_NAME, or S3_BUCKET) could not be loaded from config.json for the target environment. Aborting."
+            exit 1
+          fi
 
       - name: Configure AWS Credentials for Tooling Account
         uses: aws-actions/configure-aws-credentials@v4
@@ -118,5 +132,5 @@ jobs:
             --template-file app/deployer.yaml \
             --stack-name ${{ env.STACK_NAME }} \
             --parameter-overrides ${{ steps.load_config.outputs.overrides_string }} LambdaCodeS3Bucket=${{ env.S3_BUCKET }} LambdaCodeS3Key=${{ env.S3_KEY }} \
-            --capabilities CAPABILITY_IAM \
+            --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset > /dev/null

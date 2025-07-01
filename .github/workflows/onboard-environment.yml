@@ -62,6 +62,13 @@ jobs:
           repository: ${{ github.event.inputs.application_repo }}
           path: app
 
+      - name: Validate config.json Exists
+        run: |
+          if [ ! -f "./app/config.json" ]; then
+            echo "::error::config.json not found in the root of the application repository (${{ github.event.inputs.application_repo }}). Aborting."
+            exit 1
+          fi
+
       - name: Parse Account ID from Role ARN
         id: parse_arn
         run: |
@@ -125,6 +132,13 @@ jobs:
           echo "::add-mask::${{ github.event.inputs.company_name }}"
           echo "::add-mask::${{ github.event.inputs.environment_name }}"
 
+      - name: Validate Inputs from Previous Job
+        run: |
+          if [ -z "${{ needs.deploy_client_role.outputs.deployment_role_arn }}" ] || [ -z "${{ needs.deploy_client_role.outputs.project_identifier }}" ]; then
+            echo "::error::Required outputs (deployment_role_arn or project_identifier) were not provided by the deploy_client_role job. Aborting."
+            exit 1
+          fi
+
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
@@ -145,8 +159,8 @@ jobs:
       - name: Create SSM Parameter
         run: |
           PROJECT_ID="${{ needs.deploy_client_role.outputs.project_identifier }}"
-          PARAMETER_NAME="/github/${{ github.event.inputs.company_name }}/${{ github.event.inputs.environment_name }}/${PROJECT_ID}/role-arn"
           ROLE_ARN="${{ needs.deploy_client_role.outputs.deployment_role_arn }}"
+          PARAMETER_NAME="/github/${{ github.event.inputs.company_name }}/${{ github.event.inputs.environment_name }}/${PROJECT_ID}/role-arn"
           echo "::add-mask::$PROJECT_ID"
           echo "::add-mask::$PARAMETER_NAME"
           echo "::add-mask::$ROLE_ARN"

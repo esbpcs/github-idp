@@ -60,7 +60,7 @@ Resources:
               StringLike:
                 "token.actions.githubusercontent.com:sub": !Sub "repo:${GitHubOrg}/${GitHubRepo}:*"
       Policies:
-        - PolicyName: "AssumeDeploymentRolesAndReadConfigPolicy"
+        - PolicyName: "AssumeDeploymentRolesAndReadWriteConfigPolicy"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -68,11 +68,14 @@ Resources:
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:aws:iam::*:role/${TargetRoleName}"
               - Effect: Allow
-                Action: "ssm:GetParameter"
+                Action:
+                  - "ssm:GetParameter"
+                  - "ssm:PutParameter"
+                  - "ssm:DeleteParameter"
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmParameterPath}*"
               - Effect: Allow
                 Action: "kms:Decrypt"
-                Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*"
+                Resource: "*"
 
 Outputs:
   # The ARN of the created tooling role.
