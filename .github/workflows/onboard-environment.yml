@@ -91,7 +91,7 @@ jobs:
         id: deploy
         run: |
           STACK_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}-${{ steps.load_config.outputs.project_identifier }}-client"
-          TOOLING_ROLE_ARN="${{ secrets.CENTRAL_TOOLING_ROLE_ARN }}"
+          TOOLING_ROLE_ARN="${{ secrets.TOOLING_ACCOUNT_OIDC_ROLE_ARN }}"
           echo "::add-mask::$STACK_NAME"
           echo "::add-mask::$TOOLING_ROLE_ARN"
           echo "Deploying client stack..."
@@ -99,7 +99,7 @@ jobs:
             --template-file client.yaml \
             --stack-name "$STACK_NAME" \
             --parameter-overrides ToolingRoleArn=$TOOLING_ROLE_ARN \
-            --capabilities CAPABILITY_IAM \
+            --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset > /dev/null
           echo "stack_name=$STACK_NAME" >> $GITHUB_ENV
 
