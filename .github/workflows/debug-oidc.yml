@@ -31,7 +31,5 @@ jobs:
 
       - name: Get Caller Identity
         run: |
-          echo "---"
           echo "Successfully assumed role. Details:"
           aws sts get-caller-identity
-          echo "---"
