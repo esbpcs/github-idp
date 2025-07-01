@@ -32,6 +32,12 @@ jobs:
       project_identifier: ${{ steps.load_config.outputs.project_identifier }}
 
     steps:
+      - name: Mask Sensitive Inputs
+        run: |
+          echo "::add-mask::${{ github.event.inputs.company_name }}"
+          echo "::add-mask::${{ github.event.inputs.environment_name }}"
+          echo "::add-mask::${{ github.event.inputs.application_repo }}"
+
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
@@ -47,6 +53,9 @@ jobs:
             cloudformation.ap-southeast-1.amazonaws.com:443
             cloudformation.us-east-1.amazonaws.com:443
 
+      - name: Checkout Central Tooling Repo
+        uses: actions/checkout@v4
+
       - name: Checkout Application Repository
         uses: actions/checkout@v4
         with:
@@ -56,16 +65,20 @@ jobs:
       - name: Parse Account ID from Role ARN
         id: parse_arn
         run: |
-          ACCOUNT_ID=$(echo "${{ secrets.MANAGEMENT_CONNECTOR_ROLE_ARN }}" | cut -d ':' -f 5)
-          echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+          MANAGEMENT_ARN="${{ secrets.MANAGEMENT_CONNECTOR_ROLE_ARN }}"
+          echo "::add-mask::$MANAGEMENT_ARN"
+          ACCOUNT_ID=$(echo "$MANAGEMENT_ARN" | cut -d ':' -f 5)
           echo "::add-mask::$ACCOUNT_ID"
+          echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
 
-      - name: Load Project Identifier from Config
+      - name: Load Project Identifier from Config and Mask
         id: load_config
         working-directory: ./app
         run: |
           COMPOSITE_ENV_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
+          echo "::add-mask::$COMPOSITE_ENV_NAME"
           PROJECT_ID=$(jq -r --arg TARGET_ENV "$COMPOSITE_ENV_NAME" '.[$TARGET_ENV].project_identifier' config.json)
+          echo "::add-mask::$PROJECT_ID"
           echo "project_identifier=$PROJECT_ID" >> $GITHUB_OUTPUT
 
       - name: Configure AWS Credentials for Target Account
@@ -79,8 +92,9 @@ jobs:
         run: |
           STACK_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}-${{ steps.load_config.outputs.project_identifier }}-client"
           TOOLING_ROLE_ARN="${{ secrets.CENTRAL_TOOLING_ROLE_ARN }}"
+          echo "::add-mask::$STACK_NAME"
           echo "::add-mask::$TOOLING_ROLE_ARN"
-          echo "Deploying client stack: $STACK_NAME"
+          echo "Deploying client stack..."
           aws cloudformation deploy \
             --template-file client.yaml \
             --stack-name "$STACK_NAME" \
@@ -106,6 +120,11 @@ jobs:
     needs: deploy_client_role
 
     steps:
+      - name: Mask Sensitive Inputs
+        run: |
+          echo "::add-mask::${{ github.event.inputs.company_name }}"
+          echo "::add-mask::${{ github.event.inputs.environment_name }}"
+
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
@@ -128,8 +147,10 @@ jobs:
           PROJECT_ID="${{ needs.deploy_client_role.outputs.project_identifier }}"
           PARAMETER_NAME="/github/${{ github.event.inputs.company_name }}/${{ github.event.inputs.environment_name }}/${PROJECT_ID}/role-arn"
           ROLE_ARN="${{ needs.deploy_client_role.outputs.deployment_role_arn }}"
+          echo "::add-mask::$PROJECT_ID"
+          echo "::add-mask::$PARAMETER_NAME"
           echo "::add-mask::$ROLE_ARN"
-          echo "Creating SSM Parameter: $PARAMETER_NAME"
+          echo "Creating SSM Parameter..."
           aws ssm put-parameter \
             --name "$PARAMETER_NAME" \
             --value "$ROLE_ARN" \

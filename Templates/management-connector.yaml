@@ -4,25 +4,34 @@ Description: >
   entry point for GitHub Actions to perform high-level management tasks.
 
 Parameters:
+  # Your GitHub organization name (e.g., 'esbpcs-org').
   GitHubOrg:
     Type: String
     Description: "Your GitHub organization name (e.g., 'esbpcs-org')."
+
+  # The name of your central management repository where reusable workflows reside.
   GitHubRepo:
     Type: String
     Description: "The name of your central management repository where your reusable workflows reside."
     Default: "CentralManagementRepo"
+
+  # A unique base name for the resources in this stack.
   ProjectName:
     Type: String
     Description: "A unique base name for the resources in this stack."
     Default: "GitHub-Management-Connector"
 
 Resources:
+  # This resource creates the OIDC identity provider for GitHub Actions.
+  # It establishes a trust relationship between your AWS account and GitHub.
   GitHubOIDCProvider:
     Type: "AWS::IAM::OIDCProvider"
     Properties:
       Url: "https://token.actions.githubusercontent.com"
       ClientIdList: ["sts.amazonaws.com"]
 
+  # This is the management connector role that will be assumed by GitHub Actions.
+  # It has permissions to manage CloudFormation stacks and IAM roles in the target account.
   ManagementConnectorRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -62,6 +71,8 @@ Resources:
                 Resource: "arn:aws:iam::*:role/InternalToolingDeploymentRole"
 
 Outputs:
+  # The ARN of the created management connector role.
+  # This value needs to be saved as a secret in your GitHub environment.
   ManagementConnectorRoleArn:
     Description: >-
       ACTION REQUIRED: Copy this ARN. In your GitHub repository, create a GitHub Environment

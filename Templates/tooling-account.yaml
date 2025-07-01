@@ -3,33 +3,46 @@ Description: >
   Deploys the central, one-time resources for GitHub Actions OIDC integration. This includes the OIDC Provider and a central Tooling Role for your entire organization.
 
 Parameters:
+  # Your GitHub organization name (e.g., 'esbpcs-org').
   GitHubOrg:
     Type: String
     Description: "Your GitHub organization name (e.g., 'esbpcs-org')."
+
+  # The name of your central management repository where reusable workflows reside.
   GitHubRepo:
     Type: String
     Description: "The name of your central management repository where your reusable workflows reside."
     Default: "CentralManagementRepo"
+
+  # A unique base name for resources created by this stack.
   ProjectName:
     Type: String
     Description: "A unique base name for resources created by this stack (e.g., the name of your organization or primary project)."
     Default: "ESBPCS"
+
+  # The static name of the application deployment role created in target accounts.
   TargetRoleName:
     Type: String
     Description: "The static name of the application deployment role created in target accounts. This value should not be changed."
     Default: "InternalToolingDeploymentRole"
+
+  # The root path in SSM Parameter Store for storing role ARNs.
   SsmParameterPath:
     Type: String
     Description: "The root path in SSM Parameter Store for storing all project role ARNs. This value should not be changed."
     Default: "/github/"
 
 Resources:
+  # This resource creates the OIDC identity provider for GitHub Actions.
+  # It establishes a trust relationship between your AWS account and GitHub.
   GitHubOIDCProvider:
     Type: "AWS::IAM::OIDCProvider"
     Properties:
       Url: "https://token.actions.githubusercontent.com"
       ClientIdList: ["sts.amazonaws.com"]
 
+  # This is the central tooling role that will be assumed by GitHub Actions.
+  # It has permissions to assume deployment roles in other accounts and read configuration from SSM.
   GitHubActionsToolingRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -62,6 +75,8 @@ Resources:
                 Resource: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*"
 
 Outputs:
+  # The ARN of the created tooling role.
+  # This value needs to be saved as a secret in your GitHub repository.
   GitHubActionsToolingRoleArn:
     Description: >-
       ACTION REQUIRED: Copy this ARN and save it as a repository-level secret in your central management

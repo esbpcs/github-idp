@@ -25,6 +25,12 @@ jobs:
       name: ${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}
 
     steps:
+      - name: Mask Sensitive Inputs
+        run: |
+          echo "::add-mask::${{ github.event.inputs.company_name }}"
+          echo "::add-mask::${{ github.event.inputs.environment_name }}"
+          echo "::add-mask::${{ github.event.inputs.application_repo }}"
+
       - name: Harden Runner
         uses: step-security/harden-runner@v2
         with:
@@ -49,9 +55,10 @@ jobs:
           repository: ${{ github.event.inputs.application_repo }}
           path: app
 
-      - name: Determine Target Environment
+      - name: Determine Target Environment and Mask
         run: |
           TARGET_ENV="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
+          echo "::add-mask::$TARGET_ENV"
           echo "TARGET_ENV=$TARGET_ENV" >> $GITHUB_ENV
 
       - name: Load Config and Generate Parameters
@@ -63,11 +70,16 @@ jobs:
           SSM_PARAM_NAME=$(echo "$CONFIG_JSON" | jq -r '.ssm_parameter_for_role')
           S3_BUCKET=$(echo "$CONFIG_JSON" | jq -r '.LambdaCodeS3Bucket')
           STACK_NAME=$(echo "$CONFIG_JSON" | jq -r '.Name')
+          S3_KEY="function-${{ github.sha }}.zip"
+          echo "::add-mask::$SSM_PARAM_NAME"
+          echo "::add-mask::$S3_BUCKET"
+          echo "::add-mask::$STACK_NAME"
+          echo "::add-mask::$S3_KEY"
           echo "overrides_string=$OVERRIDES" >> $GITHUB_OUTPUT
           echo "SSM_PARAM_NAME=$SSM_PARAM_NAME" >> $GITHUB_ENV
           echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
           echo "STACK_NAME=$STACK_NAME" >> $GITHUB_ENV
-          echo "S3_KEY=function-${{ github.sha }}.zip" >> $GITHUB_ENV
+          echo "S3_KEY=$S3_KEY" >> $GITHUB_ENV
 
       - name: Configure AWS Credentials for Tooling Account
         uses: aws-actions/configure-aws-credentials@v4
@@ -96,12 +108,12 @@ jobs:
           cd app/lambda
           zip -r ../../${{ env.S3_KEY }} . > /dev/null
           cd ../..
-          echo "Uploading artifact to s3://${{ env.S3_BUCKET }}/${{ env.S3_KEY }}"
+          echo "Uploading artifact to S3..."
           aws s3 cp ${{ env.S3_KEY }} s3://${{ env.S3_BUCKET }}/${{ env.S3_KEY }}
 
       - name: Deploy CloudFormation Stack
         run: |
-          echo "Deploying application stack: ${{ env.STACK_NAME }}"
+          echo "Deploying application stack..."
           aws cloudformation deploy \
             --template-file app/deployer.yaml \
             --stack-name ${{ env.STACK_NAME }} \

@@ -4,15 +4,22 @@ Description: >
   This template is deployed automatically by the 'onboard-environment.yml' workflow.
 
 Parameters:
+  # The ARN of the central CI/CD role in the tooling account.
+  # This parameter is provided by the onboarding workflow.
   ToolingRoleArn:
     Type: String
     Description: "The full ARN of the central CI/CD tooling role. This is provided automatically by the onboarding workflow."
+
+  # The static name of the role created by this template.
+  # It is recommended not to change this value to ensure consistency across environments.
   TargetRoleName:
     Type: String
     Default: "InternalToolingDeploymentRole"
     Description: "The static name of the application deployment role being created. This value should not be changed."
 
 Resources:
+  # This is the application deployment role that will be assumed by the central tooling role.
+  # It contains the necessary permissions to deploy and manage a serverless application.
   InternalToolingDeploymentRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -53,6 +60,8 @@ Resources:
                 Resource: "*"
 
 Outputs:
+  # The ARN of the created deployment role.
+  # This output is captured by the onboarding workflow and stored in SSM Parameter Store.
   InternalToolingDeploymentRoleArn:
     Description: >-
       FOR INFORMATION: This is the ARN of the created application deployment role.
