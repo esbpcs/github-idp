@@ -51,6 +51,10 @@ jobs:
             ssm.us-east-1.amazonaws.com:443
             cloudformation.ap-southeast-1.amazonaws.com:443
             cloudformation.us-east-1.amazonaws.com:443
+            registry.npmjs.org:443
+
+      - name: Checkout Central Tooling Repo
+        uses: actions/checkout@v4
 
       - name: Checkout Application Repository
         uses: actions/checkout@v4

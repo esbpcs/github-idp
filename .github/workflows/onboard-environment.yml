@@ -52,6 +52,7 @@ jobs:
             ssm.us-east-1.amazonaws.com:443
             cloudformation.ap-southeast-1.amazonaws.com:443
             cloudformation.us-east-1.amazonaws.com:443
+            registry.npmjs.org:443
 
       - name: Checkout Central Tooling Repo
         uses: actions/checkout@v4
@@ -102,12 +103,21 @@ jobs:
           echo "::add-mask::$STACK_NAME"
           echo "::add-mask::$TOOLING_ROLE_ARN"
           echo "Deploying client stack..."
+
+          # Redirect output to a log file and check for errors
           aws cloudformation deploy \
             --template-file client.yaml \
             --stack-name "$STACK_NAME" \
             --parameter-overrides ToolingRoleArn=$TOOLING_ROLE_ARN \
             --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset > /dev/null
+            --no-fail-on-empty-changeset > deployment_output.log 2>&1
+
+          if [ $? -ne 0 ]; then
+            echo "::error::'aws cloudformation deploy' command failed. See error output below:"
+            cat deployment_output.log
+            exit 1
+          fi
+
           echo "stack_name=$STACK_NAME" >> $GITHUB_ENV
 
       - name: Get Deployment Role ARN
