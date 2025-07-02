@@ -16,6 +16,10 @@ on:
         description: "AWS Region of the deployment."
         required: true
         default: "ap-southeast-1"
+      force_delete:
+        description: "Force delete the stacks even if they are in a failed state."
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -122,7 +126,11 @@ jobs:
         if: env.skip_deletion == 'false'
         run: |
           echo "Deleting application stack: ${{ env.STACK_NAME }}"
-          aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
+          if [ "${{ github.event.inputs.force_delete }}" == "true" ]; then
+            aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }} --force-delete-stack
+          else
+            aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
+          fi
           echo "Waiting for stack deletion to complete..."
           aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
 
@@ -172,7 +180,11 @@ jobs:
           # Check if the stack exists before trying to delete it
           if aws cloudformation describe-stacks --stack-name $STACK_NAME > /dev/null 2>&1; then
             echo "Deleting client role stack: $STACK_NAME"
-            aws cloudformation delete-stack --stack-name $STACK_NAME
+            if [ "${{ github.event.inputs.force_delete }}" == "true" ]; then
+              aws cloudformation delete-stack --stack-name $STACK_NAME --force-delete-stack
+            else
+              aws cloudformation delete-stack --stack-name $STACK_NAME
+            fi
             echo "Waiting for stack deletion to complete..."
             aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
           else
