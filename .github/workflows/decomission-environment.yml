@@ -51,10 +51,6 @@ jobs:
             ssm.us-east-1.amazonaws.com:443
             cloudformation.ap-southeast-1.amazonaws.com:443
             cloudformation.us-east-1.amazonaws.com:443
-            registry.npmjs.org:443
-
-      - name: Checkout Central Tooling Repo
-        uses: actions/checkout@v4
 
       - name: Checkout Application Repository
         uses: actions/checkout@v4
@@ -99,23 +95,33 @@ jobs:
           role-to-assume: ${{ secrets.TOOLING_ACCOUNT_OIDC_ROLE_ARN }}
           aws-region: ${{ github.event.inputs.aws_region }}
 
-      - name: Get Target Deployment Role ARN from SSM
+      - name: Get and Assume Application Role
         id: get_role
         run: |
           echo "Fetching target deployment role ARN..."
-          TARGET_ROLE_ARN=$(aws ssm get-parameter --name "${{ env.SSM_PARAM_NAME }}" --with-decryption --query "Parameter.Value" --output text)
-          echo "::add-mask::$TARGET_ROLE_ARN"
-          echo "aws_role_to_assume=${TARGET_ROLE_ARN}" >> $GITHUB_ENV
+          TARGET_ROLE_ARN=$(aws ssm get-parameter --name "${{ env.SSM_PARAM_NAME }}" --with-decryption --query "Parameter.Value" --output text 2>/dev/null)
+
+          if [ -z "$TARGET_ROLE_ARN" ]; then
+            echo "::warning::SSM parameter '${{ env.SSM_PARAM_NAME }}' not found. The application stack may have already been deleted or was never deployed. Skipping application stack deletion."
+            # Set a flag to skip subsequent steps that depend on the role
+            echo "skip_deletion=true" >> $GITHUB_ENV
+          else
+            echo "::add-mask::$TARGET_ROLE_ARN"
+            echo "aws_role_to_assume=${TARGET_ROLE_ARN}" >> $GITHUB_ENV
+            echo "skip_deletion=false" >> $GITHUB_ENV
+          fi
 
       - name: Assume Final Deployment Role in Target Account
+        if: env.skip_deletion == 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.aws_role_to_assume }}
           aws-region: ${{ github.event.inputs.aws_region }}
 
       - name: Delete Application Stack
+        if: env.skip_deletion == 'false'
         run: |
-          echo "Deleting application stack..."
+          echo "Deleting application stack: ${{ env.STACK_NAME }}"
           aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
           echo "Waiting for stack deletion to complete..."
           aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
@@ -162,15 +168,21 @@ jobs:
           STACK_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}-${PROJECT_ID}-client"
           echo "::add-mask::$PROJECT_ID"
           echo "::add-mask::$STACK_NAME"
-          echo "Deleting client role stack..."
-          aws cloudformation delete-stack --stack-name $STACK_NAME
-          echo "Waiting for stack deletion to complete..."
-          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
+
+          # Check if the stack exists before trying to delete it
+          if aws cloudformation describe-stacks --stack-name $STACK_NAME > /dev/null 2>&1; then
+            echo "Deleting client role stack: $STACK_NAME"
+            aws cloudformation delete-stack --stack-name $STACK_NAME
+            echo "Waiting for stack deletion to complete..."
+            aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
+          else
+            echo "::warning::Client role stack '$STACK_NAME' not found. Skipping deletion."
+          fi
 
   delete_ssm_parameter:
     name: 3. Delete SSM Parameter Link
     runs-on: ubuntu-latest
-    needs: delete_client_role_stack
+    needs: [delete_application_stack, delete_client_role_stack]
     steps:
       - name: Mask Sensitive Inputs
         run: |
@@ -179,8 +191,6 @@ jobs:
 
       - name: Validate Inputs from Previous Job
         run: |
-          # This job depends on the output of a job that might not have run if the first one failed.
-          # We check the `project_identifier` again which originates from the very first job.
           if [ -z "${{ needs.delete_application_stack.outputs.project_identifier }}" ]; then
             echo "::error::Required output 'project_identifier' was not provided by the initial job. Aborting."
             exit 1
@@ -209,5 +219,11 @@ jobs:
           PARAMETER_NAME="/github/${{ github.event.inputs.company_name }}/${{ github.event.inputs.environment_name }}/${PROJECT_ID}/role-arn"
           echo "::add-mask::$PROJECT_ID"
           echo "::add-mask::$PARAMETER_NAME"
-          echo "Deleting SSM Parameter..."
-          aws ssm delete-parameter --name "$PARAMETER_NAME"
+
+          # Check if the parameter exists before trying to delete it
+          if aws ssm get-parameter --name "$PARAMETER_NAME" > /dev/null 2>&1; then
+            echo "Deleting SSM Parameter: $PARAMETER_NAME"
+            aws ssm delete-parameter --name "$PARAMETER_NAME"
+          else
+            echo "::warning::SSM Parameter '$PARAMETER_NAME' not found. Skipping deletion."
+          fi

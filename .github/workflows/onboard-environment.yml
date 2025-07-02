@@ -120,6 +120,11 @@ jobs:
 
           echo "stack_name=$STACK_NAME" >> $GITHUB_ENV
 
+      - name: Wait for Stack to Complete
+        run: |
+          echo "Waiting for stack creation/update to complete..."
+          aws cloudformation wait stack-deploy-complete --stack-name ${{ env.stack_name }}
+
       - name: Get Deployment Role ARN
         id: get_role_arn
         run: |
@@ -128,6 +133,12 @@ jobs:
             --stack-name ${{ env.stack_name }} \
             --query "Stacks[0].Outputs[?OutputKey=='InternalToolingDeploymentRoleArn'].OutputValue" \
             --output text)
+
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Could not fetch the Deployment Role ARN from the stack outputs. The stack may have failed to create correctly."
+            exit 1
+          fi
+
           echo "::add-mask::$ROLE_ARN"
           echo "role_arn=$ROLE_ARN" >> $GITHUB_OUTPUT
 
