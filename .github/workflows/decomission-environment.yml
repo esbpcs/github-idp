@@ -106,7 +106,7 @@ jobs:
         id: get_role
         run: |
           echo "Fetching target deployment role ARN..."
-          TARGET_ROLE_ARN=$(aws ssm get-parameter --name "${{ env.SSM_PARAM_NAME }}" --with-decryption --query "Parameter.Value" --output text 2>/dev/null)
+          TARGET_ROLE_ARN=$(aws ssm get-parameter --name "${{ env.SSM_PARAM_NAME }}" --with-decryption --query "Parameter.Value" --output text 2>/dev/null || true)
 
           if [ -z "$TARGET_ROLE_ARN" ]; then
             echo "::warning::SSM parameter '${{ env.SSM_PARAM_NAME }}' not found. The application stack may have already been deleted or was never deployed. Skipping application stack deletion."
