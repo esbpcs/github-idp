@@ -134,7 +134,7 @@ jobs:
           echo "Waiting for stack operation to complete using waiter: ${{ env.waiter_command }}"
           aws cloudformation wait ${{ env.waiter_command }} --stack-name ${{ env.stack_name }}
 
-      - name: Get Deployment Role ARN
+      - name: Get and Validate Deployment Role ARN
         id: get_role_arn
         run: |
           echo "Fetching Deployment Role ARN..."
@@ -143,8 +143,9 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='InternalToolingDeploymentRoleArn'].OutputValue" \
             --output text)
 
+          # Check if the role ARN is empty
           if [ -z "$ROLE_ARN" ]; then
-            echo "::error::Could not fetch the Deployment Role ARN from the stack outputs. The stack may have failed to create correctly."
+            echo "::error::Could not fetch the Deployment Role ARN from the stack outputs. The stack has likely failed and rolled back. Check the CloudFormation console for details on stack '${{ env.stack_name }}'."
             exit 1
           fi
 
