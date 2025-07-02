@@ -48,10 +48,6 @@ jobs:
             s3.amazonaws.com:443
             s3.ap-southeast-1.amazonaws.com:443
             s3.us-east-1.amazonaws.com:443
-            registry.npmjs.org:443
-
-      - name: Checkout Central Tooling Repo
-        uses: actions/checkout@v4
 
       - name: Checkout Application Repository
         uses: actions/checkout@v4
@@ -66,38 +62,41 @@ jobs:
             exit 1
           fi
 
-      - name: Determine Target Environment and Mask
-        run: |
-          TARGET_ENV="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
-          echo "::add-mask::$TARGET_ENV"
-          echo "TARGET_ENV=$TARGET_ENV" >> $GITHUB_ENV
-
       - name: Load Config and Generate Parameters
         id: load_config
         working-directory: ./app
         run: |
+          TARGET_ENV="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
+          echo "::add-mask::$TARGET_ENV"
+
           CONFIG_JSON=$(jq -r --arg TARGET_ENV "$TARGET_ENV" '.[$TARGET_ENV]' config.json)
+
+          if [ -z "$CONFIG_JSON" ] || [ "$CONFIG_JSON" == "null" ]; then
+            echo "::error::Could not find configuration for environment '$TARGET_ENV' in config.json."
+            exit 1
+          fi
+
           OVERRIDES=$(echo "$CONFIG_JSON" | jq -r 'to_entries | .[] | select(.key != "ssm_parameter_for_role") | .key + "=" + (.value|tostring)' | tr '\n' ' ')
           SSM_PARAM_NAME=$(echo "$CONFIG_JSON" | jq -r '.ssm_parameter_for_role')
           S3_BUCKET=$(echo "$CONFIG_JSON" | jq -r '.LambdaCodeS3Bucket')
           STACK_NAME=$(echo "$CONFIG_JSON" | jq -r '.Name')
           S3_KEY="function-${{ github.sha }}.zip"
+
+          if [ -z "$SSM_PARAM_NAME" ] || [ -z "$S3_BUCKET" ] || [ -z "$STACK_NAME" ]; then
+             echo "::error::One or more required fields (ssm_parameter_for_role, LambdaCodeS3Bucket, Name) are missing for environment '$TARGET_ENV' in config.json."
+             exit 1
+          fi
+
           echo "::add-mask::$SSM_PARAM_NAME"
           echo "::add-mask::$S3_BUCKET"
           echo "::add-mask::$STACK_NAME"
           echo "::add-mask::$S3_KEY"
+
           echo "overrides_string=$OVERRIDES" >> $GITHUB_OUTPUT
           echo "SSM_PARAM_NAME=$SSM_PARAM_NAME" >> $GITHUB_ENV
           echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
           echo "STACK_NAME=$STACK_NAME" >> $GITHUB_ENV
           echo "S3_KEY=$S3_KEY" >> $GITHUB_ENV
-
-      - name: Validate Loaded Configuration
-        run: |
-          if [ -z "${{ env.STACK_NAME }}" ] || [ -z "${{ env.SSM_PARAM_NAME }}" ] || [ -z "${{ env.S3_BUCKET }}" ]; then
-            echo "::error::Critical variables (STACK_NAME, SSM_PARAM_NAME, or S3_BUCKET) could not be loaded from config.json for the target environment. Aborting."
-            exit 1
-          fi
 
       - name: Configure AWS Credentials for Tooling Account
         uses: aws-actions/configure-aws-credentials@v4
@@ -137,10 +136,5 @@ jobs:
             --stack-name ${{ env.STACK_NAME }} \
             --parameter-overrides ${{ steps.load_config.outputs.overrides_string }} LambdaCodeS3Bucket=${{ env.S3_BUCKET }} LambdaCodeS3Key=${{ env.S3_KEY }} \
             --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset > deployment_output.log 2>&1
-            
-          if [ $? -ne 0 ]; then
-            echo "::error::'aws cloudformation deploy' command failed. See error output below:"
-            cat deployment_output.log
-            exit 1
-          fi
+            --no-fail-on-empty-changeset > deployment_output.log 2>&1 || \
+            { echo "::error::'aws cloudformation deploy' command failed. See error output below:"; cat deployment_output.log; exit 1; }

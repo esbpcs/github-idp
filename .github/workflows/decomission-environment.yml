@@ -16,10 +16,6 @@ on:
         description: "AWS Region of the deployment."
         required: true
         default: "ap-southeast-1"
-      force_delete:
-        description: "Force delete the stacks even if they are in a failed state."
-        type: boolean
-        default: false
 
 permissions:
   id-token: write
@@ -75,23 +71,30 @@ jobs:
         run: |
           COMPOSITE_ENV_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
           echo "::add-mask::$COMPOSITE_ENV_NAME"
+
           CONFIG_JSON=$(jq -r --arg TARGET_ENV "$COMPOSITE_ENV_NAME" '.[$TARGET_ENV]' config.json)
+
+          if [ -z "$CONFIG_JSON" ] || [ "$CONFIG_JSON" == "null" ]; then
+            echo "::error::Could not find configuration for environment '$COMPOSITE_ENV_NAME' in config.json."
+            exit 1
+          fi
+
           STACK_NAME=$(echo "$CONFIG_JSON" | jq -r '.Name')
           SSM_PARAM_NAME=$(echo "$CONFIG_JSON" | jq -r '.ssm_parameter_for_role')
           PROJECT_ID=$(echo "$CONFIG_JSON" | jq -r '.project_identifier')
+
+          if [ -z "$STACK_NAME" ] || [ -z "$SSM_PARAM_NAME" ] || [ -z "$PROJECT_ID" ]; then
+             echo "::error::One or more required fields (Name, ssm_parameter_for_role, project_identifier) are missing for environment '$COMPOSITE_ENV_NAME' in config.json."
+             exit 1
+          fi
+
           echo "::add-mask::$STACK_NAME"
           echo "::add-mask::$SSM_PARAM_NAME"
           echo "::add-mask::$PROJECT_ID"
+
           echo "STACK_NAME=$STACK_NAME" >> $GITHUB_ENV
           echo "SSM_PARAM_NAME=$SSM_PARAM_NAME" >> $GITHUB_ENV
           echo "project_identifier=$PROJECT_ID" >> $GITHUB_OUTPUT
-
-      - name: Validate Loaded Configuration
-        run: |
-          if [ -z "${{ env.STACK_NAME }}" ] || [ -z "${{ env.SSM_PARAM_NAME }}" ] || [ -z "${{ steps.load_config.outputs.project_identifier }}" ]; then
-            echo "::error::Critical variables (STACK_NAME, SSM_PARAM_NAME, or project_identifier) could not be loaded from config.json. Aborting."
-            exit 1
-          fi
 
       - name: Configure AWS Credentials for Tooling Account
         uses: aws-actions/configure-aws-credentials@v4
@@ -107,7 +110,6 @@ jobs:
 
           if [ -z "$TARGET_ROLE_ARN" ]; then
             echo "::warning::SSM parameter '${{ env.SSM_PARAM_NAME }}' not found. The application stack may have already been deleted or was never deployed. Skipping application stack deletion."
-            # Set a flag to skip subsequent steps that depend on the role
             echo "skip_deletion=true" >> $GITHUB_ENV
           else
             echo "::add-mask::$TARGET_ROLE_ARN"
@@ -126,11 +128,7 @@ jobs:
         if: env.skip_deletion == 'false'
         run: |
           echo "Deleting application stack: ${{ env.STACK_NAME }}"
-          if [ "${{ github.event.inputs.force_delete }}" == "true" ]; then
-            aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }} --force-delete-stack
-          else
-            aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
-          fi
+          aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }}
           echo "Waiting for stack deletion to complete..."
           aws cloudformation wait stack-delete-complete --stack-name ${{ env.STACK_NAME }}
 
@@ -177,14 +175,9 @@ jobs:
           echo "::add-mask::$PROJECT_ID"
           echo "::add-mask::$STACK_NAME"
 
-          # Check if the stack exists before trying to delete it
           if aws cloudformation describe-stacks --stack-name $STACK_NAME > /dev/null 2>&1; then
             echo "Deleting client role stack: $STACK_NAME"
-            if [ "${{ github.event.inputs.force_delete }}" == "true" ]; then
-              aws cloudformation delete-stack --stack-name $STACK_NAME --force-delete-stack
-            else
-              aws cloudformation delete-stack --stack-name $STACK_NAME
-            fi
+            aws cloudformation delete-stack --stack-name $STACK_NAME
             echo "Waiting for stack deletion to complete..."
             aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
           else
@@ -232,7 +225,6 @@ jobs:
           echo "::add-mask::$PROJECT_ID"
           echo "::add-mask::$PARAMETER_NAME"
 
-          # Check if the parameter exists before trying to delete it
           if aws ssm get-parameter --name "$PARAMETER_NAME" > /dev/null 2>&1; then
             echo "Deleting SSM Parameter: $PARAMETER_NAME"
             aws ssm delete-parameter --name "$PARAMETER_NAME"

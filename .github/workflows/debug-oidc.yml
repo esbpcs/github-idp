@@ -23,6 +23,10 @@ jobs:
       name: ${{ github.event.inputs.target_environment }}
 
     steps:
+      - name: Mask Sensitive Inputs
+        run: |
+          echo "::add-mask::${{ github.event.inputs.target_environment }}"
+
       - name: Assume Role with OIDC and Get Caller Identity
         uses: aws-actions/configure-aws-credentials@v4
         with:

@@ -78,13 +78,27 @@ jobs:
           echo "::add-mask::$ACCOUNT_ID"
           echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
 
-      - name: Load Project Identifier from Config and Mask
+      - name: Load Project Identifier from Config
         id: load_config
         working-directory: ./app
         run: |
           COMPOSITE_ENV_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}"
           echo "::add-mask::$COMPOSITE_ENV_NAME"
-          PROJECT_ID=$(jq -r --arg TARGET_ENV "$COMPOSITE_ENV_NAME" '.[$TARGET_ENV].project_identifier' config.json)
+
+          CONFIG_JSON=$(jq -r --arg TARGET_ENV "$COMPOSITE_ENV_NAME" '.[$TARGET_ENV]' config.json)
+
+          if [ -z "$CONFIG_JSON" ] || [ "$CONFIG_JSON" == "null" ]; then
+            echo "::error::Could not find configuration for environment '$COMPOSITE_ENV_NAME' in config.json."
+            exit 1
+          fi
+
+          PROJECT_ID=$(echo "$CONFIG_JSON" | jq -r '.project_identifier')
+
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" == "null" ]; then
+            echo "::error::The 'project_identifier' field is missing or null for environment '$COMPOSITE_ENV_NAME' in config.json."
+            exit 1
+          fi
+
           echo "::add-mask::$PROJECT_ID"
           echo "project_identifier=$PROJECT_ID" >> $GITHUB_OUTPUT
 
@@ -115,7 +129,7 @@ jobs:
 
           echo "stack_name=$STACK_NAME" >> $GITHUB_ENV
 
-      - name: Get Deployment Role ARN
+      - name: Get and Validate Deployment Role ARN
         id: get_role_arn
         run: |
           echo "Fetching Deployment Role ARN..."
@@ -125,7 +139,7 @@ jobs:
             --output text)
 
           if [ -z "$ROLE_ARN" ]; then
-            echo "::error::Could not fetch the Deployment Role ARN from the stack outputs. The stack may have failed to create correctly."
+            echo "::error::Could not fetch the Deployment Role ARN from the stack outputs. The stack has likely failed and rolled back. Check the CloudFormation console for details on stack '${{ env.stack_name }}'."
             exit 1
           fi
 
