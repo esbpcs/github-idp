@@ -94,7 +94,7 @@ jobs:
           role-to-assume: ${{ secrets.MANAGEMENT_CONNECTOR_ROLE_ARN }}
           aws-region: ${{ github.event.inputs.aws_region }}
 
-      - name: Deploy client.yaml
+      - name: Determine Operation and Deploy Stack
         id: deploy
         run: |
           STACK_NAME="${{ github.event.inputs.company_name }}-${{ github.event.inputs.environment_name }}-${{ steps.load_config.outputs.project_identifier }}-client"
@@ -102,6 +102,15 @@ jobs:
 
           echo "::add-mask::$STACK_NAME"
           echo "::add-mask::$TOOLING_ROLE_ARN"
+
+          # Check if the stack already exists to determine which waiter to use.
+          if aws cloudformation describe-stacks --stack-name "$STACK_NAME" > /dev/null 2>&1; then
+            echo "Stack '$STACK_NAME' exists. This will be an UPDATE operation."
+            echo "waiter_command=stack-update-complete" >> $GITHUB_ENV
+          else
+            echo "Stack '$STACK_NAME' does not exist. This will be a CREATE operation."
+            echo "waiter_command=stack-create-complete" >> $GITHUB_ENV
+          fi
 
           echo "Deploying client stack..."
 
@@ -120,10 +129,10 @@ jobs:
 
           echo "stack_name=$STACK_NAME" >> $GITHUB_ENV
 
-      - name: Wait for Stack to Complete
+      - name: Wait for Stack Operation to Complete
         run: |
-          echo "Waiting for stack creation/update to complete..."
-          aws cloudformation wait stack-deploy-complete --stack-name ${{ env.stack_name }}
+          echo "Waiting for stack operation to complete using waiter: ${{ env.waiter_command }}"
+          aws cloudformation wait ${{ env.waiter_command }} --stack-name ${{ env.stack_name }}
 
       - name: Get Deployment Role ARN
         id: get_role_arn
